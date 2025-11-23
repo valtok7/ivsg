@@ -139,20 +139,25 @@ impl eframe::App for MyApp {
 
             ui.horizontal(|ui| {
                 if ui.button("Export to CSV").clicked() {
-                    if let Err(e) = export_to_csv("output.csv", &samples, self.sample_rate) {
-                        eprintln!("Failed to export: {}", e);
-                    } else {
-                        eprintln!("Exported to output.csv");
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("CSV", &["csv"])
+                        .set_file_name("output.csv")
+                        .save_file() 
+                    {
+                        if let Err(e) = export_to_csv(&path, &samples, self.sample_rate) {
+                            eprintln!("Failed to export: {}", e);
+                        } else {
+                            eprintln!("Exported to {:?}", path);
+                        }
                     }
                 }
-                ui.label("Saved to output.csv");
             });
         });
     }
 }
 
-fn export_to_csv(filename: &str, samples: &[Complex<f64>], sample_rate: f64) -> std::io::Result<()> {
-    let mut wtr = csv::Writer::from_path(filename)?;
+fn export_to_csv(path: &std::path::Path, samples: &[Complex<f64>], sample_rate: f64) -> std::io::Result<()> {
+    let mut wtr = csv::Writer::from_path(path)?;
     wtr.write_record(&["Time", "I", "Q"])?;
     
     for (i, sample) in samples.iter().enumerate() {

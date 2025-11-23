@@ -71,12 +71,21 @@ struct MyApp {
     multitone_spacing: f64,
     multitone_phase: MultitonePhase,
     seed: u64,
+
+    // View Settings
+    time_domain_unit: TimeDomainUnit,
 }
 
 #[derive(PartialEq)]
 enum SpectrumScale {
     Linear,
     Decibel,
+}
+
+#[derive(PartialEq, Debug)]
+enum TimeDomainUnit {
+    Seconds,
+    Samples,
 }
 
 impl Default for MyApp {
@@ -100,6 +109,7 @@ impl Default for MyApp {
             multitone_spacing: 1000.0,
             multitone_phase: MultitonePhase::Random,
             seed: 0,
+            time_domain_unit: TimeDomainUnit::Seconds,
         }
     }
 }
@@ -311,19 +321,46 @@ impl eframe::App for MyApp {
             let plot_height = (available_height - 60.0) / 2.0; // Subtracting some padding
 
             // Time Domain Plot
-            ui.label("Time Domain");
+            ui.horizontal(|ui| {
+                ui.label("Time Domain");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.selectable_value(
+                        &mut self.time_domain_unit,
+                        TimeDomainUnit::Samples,
+                        "Samples",
+                    );
+                    ui.selectable_value(
+                        &mut self.time_domain_unit,
+                        TimeDomainUnit::Seconds,
+                        "Time (s)",
+                    );
+                    ui.label("Unit:");
+                });
+            });
             Plot::new("time_domain")
                 .height(plot_height)
                 .show(ui, |plot_ui| {
                     let i_points: PlotPoints = samples
                         .iter()
                         .enumerate()
-                        .map(|(i, s)| [i as f64 / self.sample_rate, s.re])
+                        .map(|(i, s)| {
+                            let x = match self.time_domain_unit {
+                                TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
+                                TimeDomainUnit::Samples => i as f64,
+                            };
+                            [x, s.re]
+                        })
                         .collect();
                     let q_points: PlotPoints = samples
                         .iter()
                         .enumerate()
-                        .map(|(i, s)| [i as f64 / self.sample_rate, s.im])
+                        .map(|(i, s)| {
+                            let x = match self.time_domain_unit {
+                                TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
+                                TimeDomainUnit::Samples => i as f64,
+                            };
+                            [x, s.im]
+                        })
                         .collect();
 
                     plot_ui.line(Line::new(i_points).name("I"));

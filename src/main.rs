@@ -62,7 +62,7 @@ impl eframe::App for MyApp {
                 ui.add(
                     egui::DragValue::new(&mut self.frequency)
                         .speed(10.0)
-                        .range(0.0..=20000.0),
+                        .range(0.0..=10000000000.0),
                 );
             });
 
@@ -71,7 +71,7 @@ impl eframe::App for MyApp {
                 ui.add(
                     egui::DragValue::new(&mut self.amplitude)
                         .speed(0.01)
-                        .range(0.0..=1.0),
+                        .range(0.0..=1000000.0),
                 );
             });
 
@@ -80,7 +80,7 @@ impl eframe::App for MyApp {
                 ui.add(
                     egui::DragValue::new(&mut self.sample_rate)
                         .speed(100.0)
-                        .range(1000.0..=100000.0),
+                        .range(1000.0..=1000000000.0),
                 );
             });
 
@@ -89,7 +89,7 @@ impl eframe::App for MyApp {
                 ui.add(
                     egui::DragValue::new(&mut self.num_samples)
                         .speed(10.0)
-                        .range(1..=100000),
+                        .range(1..=1000000),
                 );
             });
 

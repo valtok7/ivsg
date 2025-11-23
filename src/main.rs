@@ -25,7 +25,6 @@ struct MyApp {
     sample_rate: f64,
 
     // State
-    signal_gen: SignalGenerator,
     fft_planner: FftPlanner<f64>,
     num_samples: usize,
     spectrum_scale: SpectrumScale,
@@ -67,7 +66,6 @@ impl Default for MyApp {
             frequency: 1000.0,
             amplitude: 1.0,
             sample_rate: 100000.0,
-            signal_gen: SignalGenerator::new(),
             fft_planner: FftPlanner::new(),
             num_samples: 1000,
             spectrum_scale: SpectrumScale::Decibel,
@@ -153,7 +151,7 @@ impl eframe::App for MyApp {
                     });
                     ui.horizontal(|ui| {
                         ui.label("Initial Phase:");
-                        egui::ComboBox::from_id_source("multitone_phase")
+                        egui::ComboBox::new("multitone_phase", "")
                             .selected_text(format!("{:?}", self.multitone_phase))
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(

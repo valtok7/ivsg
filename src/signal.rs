@@ -112,7 +112,7 @@ impl SignalGenerator {
                 MultitonePhase::Random => {
                     let mut rng = StdRng::seed_from_u64(params.seed);
                     for _ in 0..params.multitone_count {
-                        self.multitone_phases.push(rng.gen_range(0.0..2.0 * PI));
+                        self.multitone_phases.push(rng.random_range(0.0..2.0 * PI));
                     }
                 }
                 MultitonePhase::Schroeder => {

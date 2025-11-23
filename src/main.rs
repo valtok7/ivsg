@@ -4,7 +4,7 @@ use num_complex::Complex;
 use rustfft::FftPlanner;
 
 mod signal;
-use signal::{ModulationType, SignalGenerator};
+use signal::{ModulationType, MultitonePhase, SignalGenerator, SignalParams};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -47,6 +47,12 @@ struct MyApp {
     // Pulse Parameters
     pulse_freq: f64,
     pulse_duty_cycle: f64,
+
+    // Multitone Parameters
+    multitone_count: usize,
+    multitone_spacing: f64,
+    multitone_phase: MultitonePhase,
+    seed: u64,
 }
 
 #[derive(PartialEq)]
@@ -73,6 +79,10 @@ impl Default for MyApp {
             pm_mod_index: 1.0,
             pulse_freq: 10.0,
             pulse_duty_cycle: 0.5,
+            multitone_count: 10,
+            multitone_spacing: 1000.0,
+            multitone_phase: MultitonePhase::Random,
+            seed: 0,
         }
     }
 }
@@ -128,64 +138,110 @@ impl eframe::App for MyApp {
                 ui.radio_value(&mut self.mod_type, ModulationType::FM, "FM");
                 ui.radio_value(&mut self.mod_type, ModulationType::PM, "PM");
                 ui.radio_value(&mut self.mod_type, ModulationType::Pulse, "Pulse");
+                ui.radio_value(&mut self.mod_type, ModulationType::Multitone, "Multitone");
             });
 
             if self.mod_type != ModulationType::CW {
-                ui.horizontal(|ui| {
-                    ui.label("Mod Frequency (Hz):");
-                    let (freq, range) = match self.mod_type {
-                        ModulationType::AM => (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0),
-                        ModulationType::FM => (&mut self.fm_mod_freq, 0.0..=self.sample_rate / 2.0),
-                        ModulationType::PM => (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0), // Re-use AM freq for PM? No, let's use AM freq variable or add new one? I added pm_mod_index but not pm_freq. Let's use am_mod_freq for PM as well or add pm_mod_freq?
-                        // Wait, PM usually has a modulating frequency too.
-                        // I didn't add pm_mod_freq in struct. Let's use am_mod_freq or add it.
-                        // Actually, let's just use am_mod_freq for PM frequency to save space or add it properly.
-                        // Re-reading my struct update... I only added pm_mod_index.
-                        // Let's use am_mod_freq for PM frequency for now, or better, rename am_mod_freq to mod_freq_common?
-                        // No, let's just use am_mod_freq and label it "Mod Frequency".
-                        // Actually, I should probably add pm_mod_freq to be clean.
-                        // But I already sent the struct update without it.
-                        // I'll use am_mod_freq for PM for now as "Mod Frequency".
-                        // For Pulse, I added pulse_freq.
-                        ModulationType::Pulse => {
-                            (&mut self.pulse_freq, 0.0..=self.sample_rate / 2.0)
-                        }
-                        _ => (&mut self.am_mod_freq, 0.0..=0.0),
-                    };
-                    ui.add(egui::DragValue::new(freq).speed(1.0).range(range));
-                });
+                if self.mod_type == ModulationType::Multitone {
+                    ui.horizontal(|ui| {
+                        ui.label("Count:");
+                        ui.add(egui::DragValue::new(&mut self.multitone_count).range(1..=100));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Spacing (Hz):");
+                        ui.add(egui::DragValue::new(&mut self.multitone_spacing).speed(10.0));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Initial Phase:");
+                        egui::ComboBox::from_id_source("multitone_phase")
+                            .selected_text(format!("{:?}", self.multitone_phase))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut self.multitone_phase,
+                                    MultitonePhase::Zero,
+                                    "Zero",
+                                );
+                                ui.selectable_value(
+                                    &mut self.multitone_phase,
+                                    MultitonePhase::Random,
+                                    "Random",
+                                );
+                                ui.selectable_value(
+                                    &mut self.multitone_phase,
+                                    MultitonePhase::Schroeder,
+                                    "Schroeder",
+                                );
+                            });
+                    });
+                    if self.multitone_phase == MultitonePhase::Random {
+                        ui.horizontal(|ui| {
+                            ui.label("Seed:");
+                            ui.add(egui::DragValue::new(&mut self.seed));
+                        });
+                    }
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.label("Mod Frequency (Hz):");
+                        let (freq, range) = match self.mod_type {
+                            ModulationType::AM => {
+                                (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0)
+                            }
+                            ModulationType::FM => {
+                                (&mut self.fm_mod_freq, 0.0..=self.sample_rate / 2.0)
+                            }
+                            ModulationType::PM => {
+                                (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0)
+                            } // Re-use AM freq for PM? No, let's use AM freq variable or add new one? I added pm_mod_index but not pm_freq. Let's use am_mod_freq for PM as well or add pm_mod_freq?
+                            // Wait, PM usually has a modulating frequency too.
+                            // I didn't add pm_mod_freq in struct. Let's use am_mod_freq or add it.
+                            // Actually, let's just use am_mod_freq for PM frequency to save space or add it properly.
+                            // Re-reading my struct update... I only added pm_mod_index.
+                            // Let's use am_mod_freq for PM frequency for now, or better, rename am_mod_freq to mod_freq_common?
+                            // No, let's just use am_mod_freq and label it "Mod Frequency".
+                            // Actually, I should probably add pm_mod_freq to be clean.
+                            // But I already sent the struct update without it.
+                            // I'll use am_mod_freq for PM for now as "Mod Frequency".
+                            // For Pulse, I added pulse_freq.
+                            ModulationType::Pulse => {
+                                (&mut self.pulse_freq, 0.0..=self.sample_rate / 2.0)
+                            }
+                            _ => (&mut self.am_mod_freq, 0.0..=0.0),
+                        };
+                        ui.add(egui::DragValue::new(freq).speed(1.0).range(range));
+                    });
 
-                ui.horizontal(|ui| match self.mod_type {
-                    ModulationType::AM => {
-                        ui.label("Mod Index (0-1):");
-                        ui.add(
-                            egui::DragValue::new(&mut self.am_mod_index)
-                                .speed(0.01)
-                                .range(0.0..=10.0),
-                        );
-                    }
-                    ModulationType::FM => {
-                        ui.label("Deviation (Hz):");
-                        ui.add(egui::DragValue::new(&mut self.fm_deviation).speed(10.0));
-                    }
-                    ModulationType::PM => {
-                        ui.label("Mod Index (Beta):");
-                        ui.add(
-                            egui::DragValue::new(&mut self.pm_mod_index)
-                                .speed(0.01)
-                                .range(0.0..=100.0),
-                        );
-                    }
-                    ModulationType::Pulse => {
-                        ui.label("Duty Cycle (0-1):");
-                        ui.add(
-                            egui::DragValue::new(&mut self.pulse_duty_cycle)
-                                .speed(0.01)
-                                .range(0.0..=1.0),
-                        );
-                    }
-                    _ => {}
-                });
+                    ui.horizontal(|ui| match self.mod_type {
+                        ModulationType::AM => {
+                            ui.label("Mod Index (0-1):");
+                            ui.add(
+                                egui::DragValue::new(&mut self.am_mod_index)
+                                    .speed(0.01)
+                                    .range(0.0..=10.0),
+                            );
+                        }
+                        ModulationType::FM => {
+                            ui.label("Deviation (Hz):");
+                            ui.add(egui::DragValue::new(&mut self.fm_deviation).speed(10.0));
+                        }
+                        ModulationType::PM => {
+                            ui.label("Mod Index (Beta):");
+                            ui.add(
+                                egui::DragValue::new(&mut self.pm_mod_index)
+                                    .speed(0.01)
+                                    .range(0.0..=100.0),
+                            );
+                        }
+                        ModulationType::Pulse => {
+                            ui.label("Duty Cycle (0-1):");
+                            ui.add(
+                                egui::DragValue::new(&mut self.pulse_duty_cycle)
+                                    .speed(0.01)
+                                    .range(0.0..=1.0),
+                            );
+                        }
+                        _ => {}
+                    });
+                }
             }
 
             ui.separator();
@@ -214,17 +270,23 @@ impl eframe::App for MyApp {
                 ModulationType::FM => (self.fm_mod_freq, self.fm_deviation),
                 ModulationType::PM => (self.am_mod_freq, self.pm_mod_index), // Using AM freq for PM
                 ModulationType::Pulse => (self.pulse_freq, self.pulse_duty_cycle),
+                ModulationType::Multitone => (0.0, 0.0),
+            };
+
+            let params = SignalParams {
+                frequency: self.frequency,
+                sample_rate: self.sample_rate,
+                mod_type: self.mod_type,
+                mod_freq,
+                mod_strength,
+                multitone_count: self.multitone_count,
+                multitone_spacing: self.multitone_spacing,
+                multitone_phase: self.multitone_phase,
+                seed: self.seed,
             };
 
             let mut viz_gen = SignalGenerator::new();
-            let samples = viz_gen.generate_block(
-                self.frequency,
-                self.sample_rate,
-                num_samples,
-                self.mod_type,
-                mod_freq,
-                mod_strength,
-            );
+            let samples = viz_gen.generate_block(&params, num_samples);
 
             // Apply amplitude
             let samples: Vec<Complex<f64>> = samples.iter().map(|s| s * self.amplitude).collect();

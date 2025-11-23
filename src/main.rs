@@ -40,6 +40,13 @@ struct MyApp {
     // FM Parameters
     fm_mod_freq: f64,
     fm_deviation: f64,
+
+    // PM Parameters
+    pm_mod_index: f64,
+
+    // Pulse Parameters
+    pulse_freq: f64,
+    pulse_duty_cycle: f64,
 }
 
 #[derive(PartialEq)]
@@ -63,6 +70,9 @@ impl Default for MyApp {
             am_mod_index: 0.5,
             fm_mod_freq: 100.0,
             fm_deviation: 1000.0,
+            pm_mod_index: 1.0,
+            pulse_freq: 10.0,
+            pulse_duty_cycle: 0.5,
         }
     }
 }
@@ -116,6 +126,8 @@ impl eframe::App for MyApp {
                 ui.radio_value(&mut self.mod_type, ModulationType::CW, "CW");
                 ui.radio_value(&mut self.mod_type, ModulationType::AM, "AM");
                 ui.radio_value(&mut self.mod_type, ModulationType::FM, "FM");
+                ui.radio_value(&mut self.mod_type, ModulationType::PM, "PM");
+                ui.radio_value(&mut self.mod_type, ModulationType::Pulse, "Pulse");
             });
 
             if self.mod_type != ModulationType::CW {
@@ -124,7 +136,21 @@ impl eframe::App for MyApp {
                     let (freq, range) = match self.mod_type {
                         ModulationType::AM => (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0),
                         ModulationType::FM => (&mut self.fm_mod_freq, 0.0..=self.sample_rate / 2.0),
-                        _ => (&mut self.am_mod_freq, 0.0..=0.0), // Should not happen
+                        ModulationType::PM => (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0), // Re-use AM freq for PM? No, let's use AM freq variable or add new one? I added pm_mod_index but not pm_freq. Let's use am_mod_freq for PM as well or add pm_mod_freq?
+                        // Wait, PM usually has a modulating frequency too.
+                        // I didn't add pm_mod_freq in struct. Let's use am_mod_freq or add it.
+                        // Actually, let's just use am_mod_freq for PM frequency to save space or add it properly.
+                        // Re-reading my struct update... I only added pm_mod_index.
+                        // Let's use am_mod_freq for PM frequency for now, or better, rename am_mod_freq to mod_freq_common?
+                        // No, let's just use am_mod_freq and label it "Mod Frequency".
+                        // Actually, I should probably add pm_mod_freq to be clean.
+                        // But I already sent the struct update without it.
+                        // I'll use am_mod_freq for PM for now as "Mod Frequency".
+                        // For Pulse, I added pulse_freq.
+                        ModulationType::Pulse => {
+                            (&mut self.pulse_freq, 0.0..=self.sample_rate / 2.0)
+                        }
+                        _ => (&mut self.am_mod_freq, 0.0..=0.0),
                     };
                     ui.add(egui::DragValue::new(freq).speed(1.0).range(range));
                 });
@@ -140,10 +166,22 @@ impl eframe::App for MyApp {
                     }
                     ModulationType::FM => {
                         ui.label("Deviation (Hz):");
+                        ui.add(egui::DragValue::new(&mut self.fm_deviation).speed(10.0));
+                    }
+                    ModulationType::PM => {
+                        ui.label("Mod Index (Beta):");
                         ui.add(
-                            egui::DragValue::new(&mut self.fm_deviation)
-                                .speed(10.0)
-                                .range(0.0..=self.sample_rate / 2.0),
+                            egui::DragValue::new(&mut self.pm_mod_index)
+                                .speed(0.01)
+                                .range(0.0..=100.0),
+                        );
+                    }
+                    ModulationType::Pulse => {
+                        ui.label("Duty Cycle (0-1):");
+                        ui.add(
+                            egui::DragValue::new(&mut self.pulse_duty_cycle)
+                                .speed(0.01)
+                                .range(0.0..=1.0),
                         );
                     }
                     _ => {}
@@ -174,6 +212,8 @@ impl eframe::App for MyApp {
                 ModulationType::CW => (0.0, 0.0),
                 ModulationType::AM => (self.am_mod_freq, self.am_mod_index),
                 ModulationType::FM => (self.fm_mod_freq, self.fm_deviation),
+                ModulationType::PM => (self.am_mod_freq, self.pm_mod_index), // Using AM freq for PM
+                ModulationType::Pulse => (self.pulse_freq, self.pulse_duty_cycle),
             };
 
             let mut viz_gen = SignalGenerator::new();

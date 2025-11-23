@@ -6,6 +6,8 @@ pub enum ModulationType {
     CW,
     AM,
     FM,
+    PM,
+    Pulse,
 }
 
 pub struct SignalGenerator {
@@ -51,6 +53,28 @@ impl SignalGenerator {
                 // mod_strength is frequency deviation in Hz
                 current_freq = frequency + mod_strength * self.mod_phase.cos();
             }
+            ModulationType::PM => {
+                // PM: Phase = 2*pi*fc*t + beta * cos(mod_phase)
+                // We add the phase deviation to the current phase accumulator output
+                // But here we are integrating frequency.
+                // If we want PM, we can just add the modulation term to the final phase.
+                // However, our loop updates `self.phase` by adding `current_freq`.
+                // So `self.phase` tracks 2*pi*fc*t.
+                // We just need to add the PM term to the output phase.
+                // mod_strength is beta (modulation index)
+            }
+            ModulationType::Pulse => {
+                // Pulse: Square wave amplitude modulation
+                // mod_strength is Duty Cycle (0.0 to 1.0)
+                // mod_freq is Pulse Frequency
+                // mod_phase goes 0 to 2pi.
+                // Duty cycle D: High for 0 to D*2pi, Low for D*2pi to 2pi
+                if self.mod_phase < mod_strength * 2.0 * PI {
+                    amplitude_factor = 1.0;
+                } else {
+                    amplitude_factor = 0.0;
+                }
+            }
         }
 
         let phase_increment = 2.0 * PI * current_freq / sample_rate;
@@ -59,7 +83,12 @@ impl SignalGenerator {
             self.phase -= 2.0 * PI;
         }
 
-        Complex::from_polar(amplitude_factor, self.phase)
+        let mut final_phase = self.phase;
+        if mod_type == ModulationType::PM {
+            final_phase += mod_strength * self.mod_phase.cos();
+        }
+
+        Complex::from_polar(amplitude_factor, final_phase)
     }
 
     pub fn generate_block(

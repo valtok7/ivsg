@@ -29,6 +29,7 @@ struct MyApp {
     // State
     signal_gen: SignalGenerator,
     fft_planner: FftPlanner<f64>,
+    num_samples: usize,
 }
 
 impl Default for MyApp {
@@ -39,6 +40,7 @@ impl Default for MyApp {
             sample_rate: 44100.0,
             signal_gen: SignalGenerator::new(),
             fft_planner: FftPlanner::new(),
+            num_samples: 1024,
         }
     }
 }
@@ -63,10 +65,15 @@ impl eframe::App for MyApp {
                 ui.add(egui::DragValue::new(&mut self.sample_rate).speed(100.0).range(1000.0..=100000.0));
             });
 
+            ui.horizontal(|ui| {
+                ui.label("Num Samples:");
+                ui.add(egui::DragValue::new(&mut self.num_samples).speed(10.0).range(1..=100000));
+            });
+
             ui.separator();
 
-            // Generate data for visualization (e.g., 1024 samples)
-            let num_samples = 1024;
+            // Generate data for visualization
+            let num_samples = self.num_samples;
             // Clone signal gen to not affect the continuous phase of the "main" output if we were streaming
             // But for visualization, we might want to show a snapshot. 
             // However, if we want to show "real-time" moving wave, we should use the main state.

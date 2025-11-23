@@ -103,7 +103,7 @@ impl Default for MyApp {
             fm_mod_freq: 100.0,
             fm_deviation: 1000.0,
             pm_mod_index: 1.0,
-            pulse_freq: 10.0,
+            pulse_freq: 1000.0,
             pulse_duty_cycle: 0.5,
             multitone_count: 10,
             multitone_spacing: 1000.0,

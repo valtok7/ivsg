@@ -87,7 +87,8 @@ impl Default for MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        // Top Panel for Controls
+        egui::TopBottomPanel::top("controls_panel").show(ctx, |ui| {
             ui.heading("Vector Signal Generator");
 
             ui.horizontal(|ui| {
@@ -189,17 +190,7 @@ impl eframe::App for MyApp {
                             }
                             ModulationType::PM => {
                                 (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0)
-                            } // Re-use AM freq for PM? No, let's use AM freq variable or add new one? I added pm_mod_index but not pm_freq. Let's use am_mod_freq for PM as well or add pm_mod_freq?
-                            // Wait, PM usually has a modulating frequency too.
-                            // I didn't add pm_mod_freq in struct. Let's use am_mod_freq or add it.
-                            // Actually, let's just use am_mod_freq for PM frequency to save space or add it properly.
-                            // Re-reading my struct update... I only added pm_mod_index.
-                            // Let's use am_mod_freq for PM frequency for now, or better, rename am_mod_freq to mod_freq_common?
-                            // No, let's just use am_mod_freq and label it "Mod Frequency".
-                            // Actually, I should probably add pm_mod_freq to be clean.
-                            // But I already sent the struct update without it.
-                            // I'll use am_mod_freq for PM for now as "Mod Frequency".
-                            // For Pulse, I added pulse_freq.
+                            }
                             ModulationType::Pulse => {
                                 (&mut self.pulse_freq, 0.0..=self.sample_rate / 2.0)
                             }
@@ -241,57 +232,67 @@ impl eframe::App for MyApp {
                     });
                 }
             }
+        });
 
-            ui.separator();
+        // Generate data for visualization and export
+        // We do this outside the panels so we can pass it to the export button in the bottom panel
+        // and the plots in the central panel.
+        let num_samples = self.num_samples;
+        let (mod_freq, mod_strength) = match self.mod_type {
+            ModulationType::CW => (0.0, 0.0),
+            ModulationType::AM => (self.am_mod_freq, self.am_mod_index),
+            ModulationType::FM => (self.fm_mod_freq, self.fm_deviation),
+            ModulationType::PM => (self.am_mod_freq, self.pm_mod_index),
+            ModulationType::Pulse => (self.pulse_freq, self.pulse_duty_cycle),
+            ModulationType::Multitone => (0.0, 0.0),
+        };
 
-            // Generate data for visualization
-            let num_samples = self.num_samples;
-            // Clone signal gen to not affect the continuous phase of the "main" output if we were streaming
-            // But for visualization, we might want to show a snapshot.
-            // However, if we want to show "real-time" moving wave, we should use the main state.
-            // But updating phase every frame for visualization might be too fast or disconnected from time.
-            // Let's just generate a fresh block from phase 0 for visualization stability,
-            // OR use the current phase but it will spin fast.
-            // For a CW, a static plot is better if frequency is constant.
-            // Let's use a temporary generator for visualization to keep the wave stable on screen?
-            // No, the user wants "Real-time".
-            // Let's just generate a block from the current state.
-            // Actually, if we update the state every frame, it will look like it's flowing.
+        let params = SignalParams {
+            frequency: self.frequency,
+            sample_rate: self.sample_rate,
+            mod_type: self.mod_type,
+            mod_freq,
+            mod_strength,
+            multitone_count: self.multitone_count,
+            multitone_spacing: self.multitone_spacing,
+            multitone_phase: self.multitone_phase,
+            seed: self.seed,
+        };
 
-            // For this implementation, let's just generate a block from t=0 every time to make it look stable
-            // unless we want to simulate a running stream.
-            // Let's stick to "snapshot" mode for now: generate from phase 0 based on current params.
+        let mut viz_gen = SignalGenerator::new();
+        let samples = viz_gen.generate_block(&params, num_samples);
+        // Apply amplitude
+        let samples: Vec<Complex<f64>> = samples.iter().map(|s| s * self.amplitude).collect();
 
-            let (mod_freq, mod_strength) = match self.mod_type {
-                ModulationType::CW => (0.0, 0.0),
-                ModulationType::AM => (self.am_mod_freq, self.am_mod_index),
-                ModulationType::FM => (self.fm_mod_freq, self.fm_deviation),
-                ModulationType::PM => (self.am_mod_freq, self.pm_mod_index), // Using AM freq for PM
-                ModulationType::Pulse => (self.pulse_freq, self.pulse_duty_cycle),
-                ModulationType::Multitone => (0.0, 0.0),
-            };
+        // Bottom Panel for Export
+        egui::TopBottomPanel::bottom("export_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Export to CSV").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("CSV", &["csv"])
+                        .set_file_name("output.csv")
+                        .save_file()
+                    {
+                        if let Err(e) = export_to_csv(&path, &samples) {
+                            eprintln!("Failed to export: {}", e);
+                        } else {
+                            eprintln!("Exported to {:?}", path);
+                        }
+                    }
+                }
+            });
+        });
 
-            let params = SignalParams {
-                frequency: self.frequency,
-                sample_rate: self.sample_rate,
-                mod_type: self.mod_type,
-                mod_freq,
-                mod_strength,
-                multitone_count: self.multitone_count,
-                multitone_spacing: self.multitone_spacing,
-                multitone_phase: self.multitone_phase,
-                seed: self.seed,
-            };
-
-            let mut viz_gen = SignalGenerator::new();
-            let samples = viz_gen.generate_block(&params, num_samples);
-
-            // Apply amplitude
-            let samples: Vec<Complex<f64>> = samples.iter().map(|s| s * self.amplitude).collect();
+        // Central Panel for Plots
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // Calculate available height for plots
+            // We have two plots, so we divide by 2.
+            // We also need to account for labels and spacing.
+            let available_height = ui.available_height();
+            let plot_height = (available_height - 60.0) / 2.0; // Subtracting some padding
 
             // Time Domain Plot
             ui.label("Time Domain");
-            let plot_height = 250.0;
             Plot::new("time_domain")
                 .height(plot_height)
                 .show(ui, |plot_ui| {
@@ -326,12 +327,6 @@ impl eframe::App for MyApp {
             let mut spectrum = samples.clone();
             fft.process(&mut spectrum);
 
-            // Shift zero frequency to center? Or just plot 0 to fs/2?
-            // Usually complex baseband signals have negative frequencies.
-            // FFT output is 0 to fs.
-            // 0..N/2 is 0..fs/2. N/2..N is -fs/2..0.
-            // Let's plot shifted: -fs/2 to fs/2.
-
             let mut fft_points: Vec<[f64; 2]> = Vec::with_capacity(num_samples);
             for i in 0..num_samples {
                 let idx = (i + num_samples / 2) % num_samples; // Shift
@@ -349,50 +344,22 @@ impl eframe::App for MyApp {
                 fft_points.push([freq, mag]);
             }
 
-            // Sort by frequency for plotting (although the loop above generates them in order -fs/2 to fs/2?)
-            // i=0 -> idx=512 -> freq = -fs/2. Correct.
-
             Plot::new("freq_domain")
                 .height(plot_height)
                 .show(ui, |plot_ui| {
                     plot_ui.line(Line::new(PlotPoints::new(fft_points)).name("Magnitude"));
                 });
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                if ui.button("Export to CSV").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("CSV", &["csv"])
-                        .set_file_name("output.csv")
-                        .save_file()
-                    {
-                        if let Err(e) = export_to_csv(&path, &samples, self.sample_rate) {
-                            eprintln!("Failed to export: {}", e);
-                        } else {
-                            eprintln!("Exported to {:?}", path);
-                        }
-                    }
-                }
-            });
         });
     }
 }
 
-fn export_to_csv(
-    path: &std::path::Path,
-    samples: &[Complex<f64>],
-    sample_rate: f64,
-) -> std::io::Result<()> {
-    let mut wtr = csv::Writer::from_path(path)?;
-    wtr.write_record(&["Time", "I", "Q"])?;
+fn export_to_csv(path: &std::path::Path, samples: &[Complex<f64>]) -> std::io::Result<()> {
+    let mut wtr = csv::WriterBuilder::new()
+        .has_headers(false)
+        .from_path(path)?;
 
-    for (i, sample) in samples.iter().enumerate() {
-        let time = i as f64 / sample_rate;
-        wtr.write_record(&[
-            time.to_string(),
-            sample.re.to_string(),
-            sample.im.to_string(),
-        ])?;
+    for sample in samples.iter() {
+        wtr.write_record(&[sample.re.to_string(), sample.im.to_string()])?;
     }
     wtr.flush()?;
     Ok(())

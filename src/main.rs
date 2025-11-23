@@ -6,13 +6,32 @@ use rustfft::FftPlanner;
 mod signal;
 use signal::{ModulationType, MultitonePhase, SignalGenerator, SignalParams};
 
+fn load_icon() -> egui::IconData {
+    let (icon_rgba, icon_width, icon_height) = {
+        let icon = image::load_from_memory(include_bytes!("../assets/icon.png"))
+            .expect("Failed to open icon path")
+            .into_rgba8();
+        let (width, height) = icon.dimensions();
+        let rgba = icon.into_raw();
+        (rgba, width, height)
+    };
+
+    egui::IconData {
+        rgba: icon_rgba,
+        width: icon_width,
+        height: icon_height,
+    }
+}
+
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_icon(load_icon()),
         ..Default::default()
     };
     eframe::run_native(
-        "Vector Signal Generator",
+        "IVSG",
         options,
         Box::new(|_cc| Ok(Box::new(MyApp::default()))),
     )
@@ -89,7 +108,7 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Top Panel for Controls
         egui::TopBottomPanel::top("controls_panel").show(ctx, |ui| {
-            ui.heading("Vector Signal Generator");
+            ui.heading("Common Parameters");
 
             ui.horizontal(|ui| {
                 ui.label("Frequency (Hz):");

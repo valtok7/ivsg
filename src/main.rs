@@ -2,10 +2,9 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 use num_complex::Complex;
 use rustfft::FftPlanner;
-use std::sync::Arc;
 
 mod signal;
-use signal::SignalGenerator;
+use signal::{ModulationType, SignalGenerator};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -30,6 +29,17 @@ struct MyApp {
     fft_planner: FftPlanner<f64>,
     num_samples: usize,
     spectrum_scale: SpectrumScale,
+
+    // Modulation
+    mod_type: ModulationType,
+
+    // AM Parameters
+    am_mod_freq: f64,
+    am_mod_index: f64,
+
+    // FM Parameters
+    fm_mod_freq: f64,
+    fm_deviation: f64,
 }
 
 #[derive(PartialEq)]
@@ -48,6 +58,11 @@ impl Default for MyApp {
             fft_planner: FftPlanner::new(),
             num_samples: 1000,
             spectrum_scale: SpectrumScale::Decibel,
+            mod_type: ModulationType::CW,
+            am_mod_freq: 100.0,
+            am_mod_index: 0.5,
+            fm_mod_freq: 100.0,
+            fm_deviation: 1000.0,
         }
     }
 }
@@ -94,6 +109,48 @@ impl eframe::App for MyApp {
             });
 
             ui.separator();
+            ui.heading("Modulation");
+
+            ui.horizontal(|ui| {
+                ui.label("Type:");
+                ui.radio_value(&mut self.mod_type, ModulationType::CW, "CW");
+                ui.radio_value(&mut self.mod_type, ModulationType::AM, "AM");
+                ui.radio_value(&mut self.mod_type, ModulationType::FM, "FM");
+            });
+
+            if self.mod_type != ModulationType::CW {
+                ui.horizontal(|ui| {
+                    ui.label("Mod Frequency (Hz):");
+                    let (freq, range) = match self.mod_type {
+                        ModulationType::AM => (&mut self.am_mod_freq, 0.0..=self.sample_rate / 2.0),
+                        ModulationType::FM => (&mut self.fm_mod_freq, 0.0..=self.sample_rate / 2.0),
+                        _ => (&mut self.am_mod_freq, 0.0..=0.0), // Should not happen
+                    };
+                    ui.add(egui::DragValue::new(freq).speed(1.0).range(range));
+                });
+
+                ui.horizontal(|ui| match self.mod_type {
+                    ModulationType::AM => {
+                        ui.label("Mod Index (0-1):");
+                        ui.add(
+                            egui::DragValue::new(&mut self.am_mod_index)
+                                .speed(0.01)
+                                .range(0.0..=10.0),
+                        );
+                    }
+                    ModulationType::FM => {
+                        ui.label("Deviation (Hz):");
+                        ui.add(
+                            egui::DragValue::new(&mut self.fm_deviation)
+                                .speed(10.0)
+                                .range(0.0..=self.sample_rate / 2.0),
+                        );
+                    }
+                    _ => {}
+                });
+            }
+
+            ui.separator();
 
             // Generate data for visualization
             let num_samples = self.num_samples;
@@ -112,8 +169,22 @@ impl eframe::App for MyApp {
             // For this implementation, let's just generate a block from t=0 every time to make it look stable
             // unless we want to simulate a running stream.
             // Let's stick to "snapshot" mode for now: generate from phase 0 based on current params.
+
+            let (mod_freq, mod_strength) = match self.mod_type {
+                ModulationType::CW => (0.0, 0.0),
+                ModulationType::AM => (self.am_mod_freq, self.am_mod_index),
+                ModulationType::FM => (self.fm_mod_freq, self.fm_deviation),
+            };
+
             let mut viz_gen = SignalGenerator::new();
-            let samples = viz_gen.generate_block(self.frequency, self.sample_rate, num_samples);
+            let samples = viz_gen.generate_block(
+                self.frequency,
+                self.sample_rate,
+                num_samples,
+                self.mod_type,
+                mod_freq,
+                mod_strength,
+            );
 
             // Apply amplitude
             let samples: Vec<Complex<f64>> = samples.iter().map(|s| s * self.amplitude).collect();

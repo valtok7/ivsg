@@ -2,6 +2,7 @@ use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 use num_complex::Complex;
 use rustfft::FftPlanner;
+use serde::{Deserialize, Serialize};
 
 mod signal;
 use signal::{ModulationType, MultitonePhase, SignalGenerator, SignalParams};
@@ -76,16 +77,96 @@ struct MyApp {
     time_domain_unit: TimeDomainUnit,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Serialize, Deserialize)]
 enum SpectrumScale {
     Linear,
     Decibel,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Serialize, Deserialize)]
 enum TimeDomainUnit {
     Seconds,
     Samples,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AppParams {
+    frequency: f64,
+    amplitude: f64,
+    sample_rate: f64,
+    num_samples: usize,
+    spectrum_scale: SpectrumScale,
+    mod_type: ModulationType,
+    am_mod_freq: f64,
+    am_mod_index: f64,
+    fm_mod_freq: f64,
+    fm_deviation: f64,
+    pm_mod_index: f64,
+    pulse_freq: f64,
+    pulse_duty_cycle: f64,
+    multitone_count: usize,
+    multitone_spacing: f64,
+    multitone_phase: MultitonePhase,
+    seed: u64,
+    time_domain_unit: TimeDomainUnit,
+}
+
+impl AppParams {
+    fn from_app(app: &MyApp) -> Self {
+        Self {
+            frequency: app.frequency,
+            amplitude: app.amplitude,
+            sample_rate: app.sample_rate,
+            num_samples: app.num_samples,
+            spectrum_scale: match app.spectrum_scale {
+                SpectrumScale::Linear => SpectrumScale::Linear,
+                SpectrumScale::Decibel => SpectrumScale::Decibel,
+            },
+            mod_type: app.mod_type,
+            am_mod_freq: app.am_mod_freq,
+            am_mod_index: app.am_mod_index,
+            fm_mod_freq: app.fm_mod_freq,
+            fm_deviation: app.fm_deviation,
+            pm_mod_index: app.pm_mod_index,
+            pulse_freq: app.pulse_freq,
+            pulse_duty_cycle: app.pulse_duty_cycle,
+            multitone_count: app.multitone_count,
+            multitone_spacing: app.multitone_spacing,
+            multitone_phase: app.multitone_phase,
+            seed: app.seed,
+            time_domain_unit: match app.time_domain_unit {
+                TimeDomainUnit::Seconds => TimeDomainUnit::Seconds,
+                TimeDomainUnit::Samples => TimeDomainUnit::Samples,
+            },
+        }
+    }
+
+    fn apply_to_app(self, app: &mut MyApp) {
+        app.frequency = self.frequency;
+        app.amplitude = self.amplitude;
+        app.sample_rate = self.sample_rate;
+        app.num_samples = self.num_samples;
+        app.spectrum_scale = match self.spectrum_scale {
+            SpectrumScale::Linear => SpectrumScale::Linear,
+            SpectrumScale::Decibel => SpectrumScale::Decibel,
+        };
+        app.mod_type = self.mod_type;
+        app.am_mod_freq = self.am_mod_freq;
+        app.am_mod_index = self.am_mod_index;
+        app.fm_mod_freq = self.fm_mod_freq;
+        app.fm_deviation = self.fm_deviation;
+        app.pm_mod_index = self.pm_mod_index;
+        app.pulse_freq = self.pulse_freq;
+        app.pulse_duty_cycle = self.pulse_duty_cycle;
+        app.multitone_count = self.multitone_count;
+        app.multitone_spacing = self.multitone_spacing;
+        app.multitone_phase = self.multitone_phase;
+        app.seed = self.seed;
+        app.time_domain_unit = match self.time_domain_unit {
+            TimeDomainUnit::Seconds => TimeDomainUnit::Seconds,
+            TimeDomainUnit::Samples => TimeDomainUnit::Samples,
+        };
+    }
 }
 
 impl Default for MyApp {
@@ -118,6 +199,39 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Top Panel for Controls
         egui::TopBottomPanel::top("controls_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Save Parameters").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .set_file_name("params.json")
+                        .save_file()
+                    {
+                        let params = AppParams::from_app(self);
+                        if let Ok(json) = serde_json::to_string_pretty(&params) {
+                            if let Err(e) = std::fs::write(&path, json) {
+                                eprintln!("Failed to save parameters: {}", e);
+                            }
+                        }
+                    }
+                }
+                if ui.button("Recall Parameters").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .pick_file()
+                    {
+                        if let Ok(json) = std::fs::read_to_string(&path) {
+                            if let Ok(params) = serde_json::from_str::<AppParams>(&json) {
+                                params.apply_to_app(self);
+                            } else {
+                                eprintln!("Failed to parse parameters");
+                            }
+                        } else {
+                            eprintln!("Failed to read parameters file");
+                        }
+                    }
+                }
+            });
+            ui.separator();
             ui.heading("Common Parameters");
 
             ui.horizontal(|ui| {

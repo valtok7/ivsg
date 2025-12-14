@@ -3,7 +3,9 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::f64::consts::PI;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ModulationType {
     CW,
     AM,
@@ -13,7 +15,7 @@ pub enum ModulationType {
     Multitone,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum MultitonePhase {
     Zero,
     Random,

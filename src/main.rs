@@ -75,6 +75,8 @@ struct MyApp {
 
     // View Settings
     time_domain_unit: TimeDomainUnit,
+    show_time_domain: bool,
+    show_freq_domain: bool,
 }
 
 #[derive(PartialEq, Serialize, Deserialize)]
@@ -109,6 +111,8 @@ struct AppParams {
     multitone_phase: MultitonePhase,
     seed: u64,
     time_domain_unit: TimeDomainUnit,
+    show_time_domain: bool,
+    show_freq_domain: bool,
 }
 
 impl AppParams {
@@ -138,6 +142,8 @@ impl AppParams {
                 TimeDomainUnit::Seconds => TimeDomainUnit::Seconds,
                 TimeDomainUnit::Samples => TimeDomainUnit::Samples,
             },
+            show_time_domain: app.show_time_domain,
+            show_freq_domain: app.show_freq_domain,
         }
     }
 
@@ -166,6 +172,8 @@ impl AppParams {
             TimeDomainUnit::Seconds => TimeDomainUnit::Seconds,
             TimeDomainUnit::Samples => TimeDomainUnit::Samples,
         };
+        app.show_time_domain = self.show_time_domain;
+        app.show_freq_domain = self.show_freq_domain;
     }
 }
 
@@ -191,6 +199,8 @@ impl Default for MyApp {
             multitone_phase: MultitonePhase::Random,
             seed: 0,
             time_domain_unit: TimeDomainUnit::Seconds,
+            show_time_domain: true,
+            show_freq_domain: true,
         }
     }
 }
@@ -268,6 +278,11 @@ impl eframe::App for MyApp {
                         .speed(10.0)
                         .range(1..=1000000),
                 );
+            });
+
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.show_time_domain, "Show Time Domain");
+                ui.checkbox(&mut self.show_freq_domain, "Show Freq Domain");
             });
 
             ui.separator();
@@ -449,90 +464,98 @@ impl eframe::App for MyApp {
             let plot_height = (available_height - 60.0) / 2.0; // Subtracting some padding
 
             // Time Domain Plot
-            ui.horizontal(|ui| {
-                ui.label("Time Domain");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.selectable_value(
-                        &mut self.time_domain_unit,
-                        TimeDomainUnit::Samples,
-                        "Samples",
-                    );
-                    ui.selectable_value(
-                        &mut self.time_domain_unit,
-                        TimeDomainUnit::Seconds,
-                        "Time (s)",
-                    );
-                    ui.label("Unit:");
+            if self.show_time_domain {
+                ui.horizontal(|ui| {
+                    ui.label("Time Domain");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.selectable_value(
+                            &mut self.time_domain_unit,
+                            TimeDomainUnit::Samples,
+                            "Samples",
+                        );
+                        ui.selectable_value(
+                            &mut self.time_domain_unit,
+                            TimeDomainUnit::Seconds,
+                            "Time (s)",
+                        );
+                        ui.label("Unit:");
+                    });
                 });
-            });
-            Plot::new("time_domain")
-                .height(plot_height)
-                .show(ui, |plot_ui| {
-                    let i_points: PlotPoints = samples
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| {
-                            let x = match self.time_domain_unit {
-                                TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
-                                TimeDomainUnit::Samples => i as f64,
-                            };
-                            [x, s.re]
-                        })
-                        .collect();
-                    let q_points: PlotPoints = samples
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| {
-                            let x = match self.time_domain_unit {
-                                TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
-                                TimeDomainUnit::Samples => i as f64,
-                            };
-                            [x, s.im]
-                        })
-                        .collect();
+                Plot::new("time_domain")
+                    .height(plot_height)
+                    .show(ui, |plot_ui| {
+                        let i_points: PlotPoints = samples
+                            .iter()
+                            .enumerate()
+                            .map(|(i, s)| {
+                                let x = match self.time_domain_unit {
+                                    TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
+                                    TimeDomainUnit::Samples => i as f64,
+                                };
+                                [x, s.re]
+                            })
+                            .collect();
+                        let q_points: PlotPoints = samples
+                            .iter()
+                            .enumerate()
+                            .map(|(i, s)| {
+                                let x = match self.time_domain_unit {
+                                    TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
+                                    TimeDomainUnit::Samples => i as f64,
+                                };
+                                [x, s.im]
+                            })
+                            .collect();
 
-                    plot_ui.line(Line::new(i_points).name("I"));
-                    plot_ui.line(Line::new(q_points).name("Q"));
-                });
+                        plot_ui.line(Line::new(i_points).name("I"));
+                        plot_ui.line(Line::new(q_points).name("Q"));
+                    });
 
-            ui.separator();
-
-            // Frequency Domain Plot
-            ui.horizontal(|ui| {
-                ui.label("Frequency Domain");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.selectable_value(&mut self.spectrum_scale, SpectrumScale::Decibel, "dB");
-                    ui.selectable_value(&mut self.spectrum_scale, SpectrumScale::Linear, "Linear");
-                    ui.label("Scale:");
-                });
-            });
-
-            let fft = self.fft_planner.plan_fft_forward(num_samples);
-            let mut spectrum = samples.clone();
-            fft.process(&mut spectrum);
-
-            let mut fft_points: Vec<[f64; 2]> = Vec::with_capacity(num_samples);
-            for i in 0..num_samples {
-                let idx = (i + num_samples / 2) % num_samples; // Shift
-                let freq =
-                    (i as f64 - num_samples as f64 / 2.0) * self.sample_rate / num_samples as f64;
-                let mut mag = spectrum[idx].norm() / num_samples as f64; // Normalize
-
-                if self.spectrum_scale == SpectrumScale::Decibel {
-                    mag = 20.0 * mag.log10();
-                    if mag < -120.0 {
-                        mag = -120.0;
-                    } // Clamp noise floor
-                }
-
-                fft_points.push([freq, mag]);
+                ui.separator();
             }
 
-            Plot::new("freq_domain")
-                .height(plot_height)
-                .show(ui, |plot_ui| {
-                    plot_ui.line(Line::new(PlotPoints::new(fft_points)).name("Magnitude"));
+            // Frequency Domain Plot
+            if self.show_freq_domain {
+                ui.horizontal(|ui| {
+                    ui.label("Frequency Domain");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.selectable_value(&mut self.spectrum_scale, SpectrumScale::Decibel, "dB");
+                        ui.selectable_value(
+                            &mut self.spectrum_scale,
+                            SpectrumScale::Linear,
+                            "Linear",
+                        );
+                        ui.label("Scale:");
+                    });
                 });
+
+                let fft = self.fft_planner.plan_fft_forward(num_samples);
+                let mut spectrum = samples.clone();
+                fft.process(&mut spectrum);
+
+                let mut fft_points: Vec<[f64; 2]> = Vec::with_capacity(num_samples);
+                for i in 0..num_samples {
+                    let idx = (i + num_samples / 2) % num_samples; // Shift
+                    let freq = (i as f64 - num_samples as f64 / 2.0) * self.sample_rate
+                        / num_samples as f64;
+                    let mut mag = spectrum[idx].norm() / num_samples as f64; // Normalize
+
+                    if self.spectrum_scale == SpectrumScale::Decibel {
+                        mag = 20.0 * mag.log10();
+                        if mag < -120.0 {
+                            mag = -120.0;
+                        } // Clamp noise floor
+                    }
+
+                    fft_points.push([freq, mag]);
+                }
+
+                Plot::new("freq_domain")
+                    .height(plot_height)
+                    .show(ui, |plot_ui| {
+                        plot_ui.line(Line::new(PlotPoints::new(fft_points)).name("Magnitude"));
+                    });
+            }
         });
     }
 }

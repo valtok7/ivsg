@@ -309,6 +309,20 @@ impl eframe::App for MyApp {
                         }
                     }
                 }
+
+                if ui.button("Export to BIN").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Binary", &["bin"])
+                        .set_file_name("output.bin")
+                        .save_file()
+                    {
+                        if let Err(e) = export_to_bin(&path, &samples) {
+                            eprintln!("Failed to export: {}", e);
+                        } else {
+                            eprintln!("Exported to {:?}", path);
+                        }
+                    }
+                }
             });
         });
 
@@ -418,5 +432,19 @@ fn export_to_csv(path: &std::path::Path, samples: &[Complex<f64>]) -> std::io::R
         wtr.write_record(&[sample.re.to_string(), sample.im.to_string()])?;
     }
     wtr.flush()?;
+    Ok(())
+}
+
+fn export_to_bin(path: &std::path::Path, samples: &[Complex<f64>]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::File::create(path)?;
+    let mut buffer = Vec::with_capacity(samples.len() * 8); // 2 * 4 bytes per sample
+
+    for sample in samples {
+        buffer.extend_from_slice(&(sample.re as f32).to_le_bytes());
+        buffer.extend_from_slice(&(sample.im as f32).to_le_bytes());
+    }
+
+    file.write_all(&buffer)?;
     Ok(())
 }

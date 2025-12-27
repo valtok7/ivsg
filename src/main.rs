@@ -77,6 +77,11 @@ struct MyApp {
     time_domain_unit: TimeDomainUnit,
     show_time_domain: bool,
     show_freq_domain: bool,
+
+    // Internal State for View
+    last_time_domain_unit: TimeDomainUnit,
+    last_plot_bounds: Option<egui_plot::PlotBounds>,
+    forced_plot_bounds: Option<egui_plot::PlotBounds>,
 }
 
 #[derive(PartialEq, Serialize, Deserialize)]
@@ -85,7 +90,7 @@ enum SpectrumScale {
     Decibel,
 }
 
-#[derive(PartialEq, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Copy)]
 enum TimeDomainUnit {
     Seconds,
     Samples,
@@ -201,6 +206,9 @@ impl Default for MyApp {
             time_domain_unit: TimeDomainUnit::Seconds,
             show_time_domain: true,
             show_freq_domain: true,
+            last_time_domain_unit: TimeDomainUnit::Seconds,
+            last_plot_bounds: None,
+            forced_plot_bounds: None,
         }
     }
 }
@@ -481,35 +489,74 @@ impl eframe::App for MyApp {
                         ui.label("Unit:");
                     });
                 });
-                Plot::new("time_domain")
-                    .height(plot_height)
-                    .show(ui, |plot_ui| {
-                        let i_points: PlotPoints = samples
-                            .iter()
-                            .enumerate()
-                            .map(|(i, s)| {
-                                let x = match self.time_domain_unit {
-                                    TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
-                                    TimeDomainUnit::Samples => i as f64,
-                                };
-                                [x, s.re]
-                            })
-                            .collect();
-                        let q_points: PlotPoints = samples
-                            .iter()
-                            .enumerate()
-                            .map(|(i, s)| {
-                                let x = match self.time_domain_unit {
-                                    TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
-                                    TimeDomainUnit::Samples => i as f64,
-                                };
-                                [x, s.im]
-                            })
-                            .collect();
 
-                        plot_ui.line(Line::new(i_points).name("I"));
-                        plot_ui.line(Line::new(q_points).name("Q"));
-                    });
+                // Check for unit change and calculate new bounds
+                if self.time_domain_unit != self.last_time_domain_unit {
+                    if let Some(bounds) = self.last_plot_bounds {
+                        let min = bounds.min();
+                        let max = bounds.max();
+                        // min[0], max[0] are X axis
+
+                        let (new_min_x, new_max_x) = match self.time_domain_unit {
+                            TimeDomainUnit::Samples => {
+                                // Seconds -> Samples: multiply by sample_rate
+                                (min[0] * self.sample_rate, max[0] * self.sample_rate)
+                            }
+                            TimeDomainUnit::Seconds => {
+                                // Samples -> Seconds: divide by sample_rate
+                                (min[0] / self.sample_rate, max[0] / self.sample_rate)
+                            }
+                        };
+
+                        // Keep Y axis same
+                        let new_min_y = min[1];
+                        let new_max_y = max[1];
+
+                        self.forced_plot_bounds = Some(egui_plot::PlotBounds::from_min_max(
+                            [new_min_x, new_min_y],
+                            [new_max_x, new_max_y],
+                        ));
+                    }
+                    self.last_time_domain_unit = self.time_domain_unit;
+                }
+
+                let plot_response =
+                    Plot::new("time_domain")
+                        .height(plot_height)
+                        .show(ui, |plot_ui| {
+                            if let Some(bounds) = self.forced_plot_bounds {
+                                plot_ui.set_plot_bounds(bounds);
+                                self.forced_plot_bounds = None;
+                            }
+
+                            let i_points: PlotPoints = samples
+                                .iter()
+                                .enumerate()
+                                .map(|(i, s)| {
+                                    let x = match self.time_domain_unit {
+                                        TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
+                                        TimeDomainUnit::Samples => i as f64,
+                                    };
+                                    [x, s.re]
+                                })
+                                .collect();
+                            let q_points: PlotPoints = samples
+                                .iter()
+                                .enumerate()
+                                .map(|(i, s)| {
+                                    let x = match self.time_domain_unit {
+                                        TimeDomainUnit::Seconds => i as f64 / self.sample_rate,
+                                        TimeDomainUnit::Samples => i as f64,
+                                    };
+                                    [x, s.im]
+                                })
+                                .collect();
+
+                            plot_ui.line(Line::new(i_points).name("I"));
+                            plot_ui.line(Line::new(q_points).name("Q"));
+                        });
+
+                self.last_plot_bounds = Some(plot_response.transform.bounds().clone());
 
                 ui.separator();
             }
